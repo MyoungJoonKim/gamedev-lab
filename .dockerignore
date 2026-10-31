@@ -1,0 +1,13 @@
+.git
+.env
+.env.*
+!.env.hosted.example
+Library
+Temp
+Logs
+UserSettings
+node_modules
+.tooling
+.data
+*.sqlite*
+tests

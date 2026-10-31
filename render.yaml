@@ -1,0 +1,35 @@
+# Managed hosting with persistent storage. Review current pricing before creating.
+services:
+  - type: web
+    name: gamedev-lab
+    runtime: docker
+    plan: starter
+    dockerfilePath: ./deploy/Dockerfile.web
+    dockerContext: .
+    healthCheckPath: /healthz
+    autoDeployTrigger: off
+    disk:
+      name: learning-data
+      mountPath: /app/data
+      sizeGB: 1
+    envVars:
+      - key: APP_MODE
+        value: hosted
+      - key: NODE_ENV
+        value: production
+      - key: DATA_DIR
+        value: /app/data
+      - key: ALLOWED_GITHUB_LOGIN
+        value: MyoungJoonKim
+      - key: GITHUB_CLIENT_ID
+        sync: false
+      - key: GITHUB_CLIENT_SECRET
+        sync: false
+      - key: GRADER_BACKEND
+        value: judge0
+      - key: JUDGE0_URL
+        sync: false
+      - key: JUDGE0_LANGUAGE_ID
+        sync: false
+      - key: JUDGE0_RAPIDAPI_KEY
+        sync: false

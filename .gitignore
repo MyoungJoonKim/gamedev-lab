@@ -112,3 +112,12 @@ InitTestScene*.unity*
 node_modules/
 .tooling/
 __pycache__/
+
+# Hosted credentials and persistent state
+.env
+.env.*
+!.env.hosted.example
+.data/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal

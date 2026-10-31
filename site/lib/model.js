@@ -17,7 +17,7 @@ export function status(d){
 }
 export function markdown(p,d){
  const fence='`'.repeat(Math.max(3,...(d.code.match(/`+/g)||[]).map(x=>x.length+1)));
- return `# ${p.title}\n\n날짜: ${today()} · GameDev Lab\n\n## 문제와 요구사항\n${p.text}\n${p.requirements.map(x=>'- '+x).join('\n')}\n\n## 첫 접근과 가설\n${d.approach||'미작성'}\n\n## 풀이 코드\n${fence}csharp\n${d.code}\n${fence}\n\n## 재현 · 근거 · 수정 · 회귀 검증\n${d.notes||'미작성'}\n\n## 테스트 결과\n상태: ${status(d)}\n출처: ${d.origin==='local'?'로컬 .NET 실제 실행':'사용자 제공 외부 증거 (독립적으로 인증하지 않음)'}\n${d.report?d.report.tests.map(t=>'- '+t.name+': '+t.status+' / '+t.actual).join('\n'):'코드 실행 결과 없음'}\n\n## 성능 비교와 선택 이유\n${d.performance||'미측정'}\n\n## 검토 제안 (실측 결과 아님)\n${p.feedback}\n\n## AI 도움을 받은 범위\n${d.ai||'미작성'}\n\n## 다음 실험\n${d.next||'미작성'}\n`;
+ return `# ${p.title}\n\n날짜: ${today()} · GameDev Lab\n\n## 문제와 요구사항\n${p.text}\n${p.requirements.map(x=>'- '+x).join('\n')}\n\n## 첫 접근과 가설\n${d.approach||'미작성'}\n\n## 풀이 코드\n${fence}csharp\n${d.code}\n${fence}\n\n## 재현 · 근거 · 수정 · 회귀 검증\n${d.notes||'미작성'}\n\n## 테스트 결과\n상태: ${status(d)}\n출처: ${d.origin==='server'?'서버 격리 C# 실행':d.origin==='local'?'로컬 .NET 실제 실행':'사용자 제공 외부 증거 (독립적으로 인증하지 않음)'}\n${d.report?d.report.tests.map(t=>'- '+t.name+': '+t.status+' / '+t.actual).join('\n'):'코드 실행 결과 없음'}\n\n## 성능 비교와 선택 이유\n${d.performance||'미측정'}\n\n## 검토 제안 (실측 결과 아님)\n${p.feedback}\n\n## AI 도움을 받은 범위\n${d.ai||'미작성'}\n\n## 다음 실험\n${d.next||'미작성'}\n`;
 }
 export function validateBackup(b){
  if(!b||b.version!==1||!b.drafts||typeof b.drafts!=='object'||Array.isArray(b.drafts)||!Array.isArray(b.history)||b.history.length>5000)throw Error('유효한 GameDev Lab 백업이 아닙니다.');
