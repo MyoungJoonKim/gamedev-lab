@@ -15,7 +15,7 @@ export const problems = [
     cases:[['첫 번째 집기','초기 수량 4','5 / true'],['가득 찬 포켓','다시 한 번 집기','5 / false'],['반복 요청','100회 호출','성공 1회, 수량 5']],
     code:'public class PocketPractice\n{\n    private int woodCount = 4;\n    private const int MaxWoodCount = 5;\n\n    public int WoodCount => woodCount;\n\n    public bool TryPickUpWood()\n    {\n        // 조건을 확인하고 상태와 반환값을 결정하세요.\n        return false;\n    }\n}\n',
     hint:'return은 현재 함수의 실행을 끝냅니다. count > 5와 count >= 5는 정확히 5개일 때 어떻게 다를까요?',
-    feedback:'이 문제에는 정수 하나면 충분할 수 있습니다. List나 Dictionary를 추가하기 전 필요한 상태부터 설명하세요. 구조가 복잡해졌다고 성능이 좋아지는 것은 아닙니다.' },
+    feedback:'단일 아이템의 수량만 관리하는 이 문제는 정수 카운터로 충분합니다. 이미 정수만 사용한다면 자료구조를 바꿀 필요가 없습니다. List·Dictionary는 여러 종류의 아이템을 관리하는 별도 요구사항이 생길 때 검토하세요.' },
   { id:'slots', stage:0, title:'고정 슬롯에 아이템 쌓기', sub:'자료구조를 선택하는 이유', level:'기초', minutes:40, tags:['배열','자료구조','경계값'], runner:true,
     text:'4칸 인벤토리에 나무를 넣습니다. 슬롯마다 최대 5개이며 앞 슬롯부터 채웁니다. 같은 인스턴스의 기존 수량을 유지하고 넣지 못한 수량을 반환하세요.',
     requirements:['새 인스턴스의 4개 슬롯은 모두 비어 있습니다.','AddWood(int amount)는 앞 슬롯부터 채우고 남은 수량을 반환합니다.','GetCount(int index)는 해당 슬롯의 수량을 반환합니다.','0 또는 음수 요청은 상태를 바꾸지 않고 0을 반환합니다.'],

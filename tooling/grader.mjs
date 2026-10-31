@@ -8,7 +8,16 @@ export const testCode={
  pocket:`
   Check("first-pickup",()=>{var p=new PocketPractice();bool ok=p.TryPickUpWood();return (ok&&p.WoodCount==5,$"count={p.WoodCount}, return={ok}");});
   Check("full-pocket",()=>{var p=new PocketPractice();p.TryPickUpWood();bool ok=p.TryPickUpWood();return (!ok&&p.WoodCount==5,$"count={p.WoodCount}, return={ok}");});
-  Check("repeated-pickup",()=>{var p=new PocketPractice();int n=0;bool valid=true;for(int i=0;i<100;i++){if(p.TryPickUpWood())n++;valid&=p.WoodCount<=5;}return (valid&&n==1&&p.WoodCount==5,$"count={p.WoodCount}, successes={n}");});`,
+  Check("repeated-pickup",()=>{
+   var p=new PocketPractice(); int calls=0, successes=0, rejections=0; bool valid=true;
+   for(int i=0;i<100;i++) {
+    calls++;
+    if(p.TryPickUpWood()) successes++; else rejections++;
+    valid &= p.WoodCount<=5;
+   }
+   return (valid&&calls==100&&successes==1&&rejections==99&&p.WoodCount==5,
+    $"총 호출={calls}회 / 성공={successes}회 / 거부={rejections}회 / 최종 수량={p.WoodCount}");
+  });`,
  slots:`
   Check("empty",()=>{var p=new SlotPractice();var a=Enumerable.Range(0,4).Select(p.GetCount).ToArray();return(a.All(x=>x==0),string.Join(",",a));});
   Check("fill-existing",()=>{var p=new SlotPractice();int a=p.AddWood(4),b=p.AddWood(3);return(a==0&&b==0&&p.GetCount(0)==5&&p.GetCount(1)==2&&p.GetCount(2)==0&&p.GetCount(3)==0,$"{p.GetCount(0)},{p.GetCount(1)},{p.GetCount(2)},{p.GetCount(3)} remaining={b}");});

@@ -66,5 +66,5 @@ export function createApp({env=process.env,store:providedStore,authFetch=fetch,r
 }
 if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)){
  const port=Number(process.env.PORT)||3000;const server=createApp();
- server.listen(port,process.env.APP_MODE==='hosted'?'0.0.0.0':'127.0.0.1',()=>console.log(`GameDev Lab started on port ${port} (${process.env.APP_MODE==='hosted'?'hosted':'local'})`));
+ server.listen(port,process.env.APP_MODE==='hosted'?'0.0.0.0':'127.0.0.1',()=>{console.log(`GameDev Lab started on port ${port} (${process.env.APP_MODE==='hosted'?'hosted':'local'})`);if(process.env.APP_MODE!=='hosted')console.log('사이트 이용 중에는 이 창을 켜 두세요. 최소화 가능 / 서버 종료: Ctrl+C');});
 }
