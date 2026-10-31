@@ -1,0 +1,164 @@
+import {ensureDaily,completeDaily,dailyProgress,mergeDaily,dayKey} from './lib/daily.js';
+import {dailyDashboard,dailyPage} from './lib/daily-view.js';
+import {openPublicationDialog} from './lib/publication-dialog.js';
+import {mountCodeEditor} from './lib/code-editor.js';
+import {stages,problems,quiz} from './lib/data.js';
+import {status,markdown,validateReport,validateBackup,today} from './lib/model.js';
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const storageKey='gamedev-lab-v1';
+let state={version:1,drafts:{},history:[],diagnosis:null,daily:{},gitPublications:{}};
+let storageWarning='';
+let destroyEditor=()=>{};
+let account=null,ready=false,revision=0,dirty=0,acknowledged=0,saving=false,conflict=false,syncError='',saveTimer;
+const apiHeaders=()=>({'Content-Type':'application/json',...(account?.csrf?{'X-CSRF-Token':account.csrf}:{})});
+const hosted=()=>account?.mode==='hosted';
+const recoveryKey=()=>storageKey+'-server-'+account.id;
+try{const saved=localStorage.getItem(storageKey);if(saved)state=validateBackup(JSON.parse(saved));}catch{storageWarning='저장 데이터를 읽지 못했습니다. 기존 저장소를 덮어쓰지 않도록 백업 상태를 확인하세요.';}
+let selectedDay=today(),calendarMonth=selectedDay.slice(0,7),lastDay=today();
+let route=location.hash.slice(1)||'dashboard',filter='전체',query='',tab='code',project=null;
+const getDraft=p=>state.drafts[p.id]||{code:p.code,approach:'',notes:'',performance:'',ai:'',next:''};
+const testNames={'first-pickup':'첫 번째 집기','full-pocket':'가득 찬 포켓','repeated-pickup':'반복 요청 (100회)','empty':'빈 슬롯','fill-existing':'기존 슬롯 채우기','overflow':'공간 부족','zero':'0개 요청','negative':'음수 요청','independent':'인스턴스 독립성'};
+const passed=()=>problems.filter(p=>status(getDraft(p))==='통과').length;
+function toast(s){$('#toast').textContent=s;$('#toast').classList.add('show');setTimeout(()=>$('#toast').classList.remove('show'),3800);}
+function updateSync(){
+ if(!hosted()){document.querySelectorAll('.cloud-state').forEach(el=>el.textContent='♧ 개인 학습 공간');return;}
+ const retry=$('#sync-retry');if(retry)retry.disabled=conflict;
+ const message=conflict?'다른 PC의 변경과 충돌했습니다. 현재 기록을 백업한 후 서버 기록을 불러오세요.':syncError|| (saving||dirty>acknowledged?'서버에 저장 중…':'서버에 저장됨');
+ document.querySelectorAll('.cloud-state').forEach(el=>el.textContent=message);
+ const banner=$('#sync-banner');if(banner){banner.hidden=!hosted()||(!conflict&&!syncError);banner.querySelector('span').textContent=message;}
+}
+function cacheRecovery(){try{localStorage.setItem(recoveryKey(),JSON.stringify({revision,state,pending:dirty>acknowledged||conflict}));}catch{toast('브라우저 임시 백업 공간이 부족합니다. JSON 백업을 내려받으세요.');}}
+function save(){
+ if(hosted()){dirty++;cacheRecovery();clearTimeout(saveTimer);saveTimer=setTimeout(flushServer,500);updateSync();return;}
+ if(storageWarning){toast(storageWarning);return;}
+ try{localStorage.setItem(storageKey,JSON.stringify(state));$('#saved')?.replaceChildren(document.createTextNode('로컬 저장됨'));}catch{toast('저장 공간이 부족합니다. 기록을 백업하세요.');}
+}
+async function flushServer(){
+ if(!hosted()||saving||conflict||dirty===acknowledged)return;
+ saving=true;syncError='';updateSync();const sent=dirty,snapshot=structuredClone(state);
+ try{const response=await fetch('/api/state',{method:'PUT',headers:apiHeaders(),body:JSON.stringify({revision,state:snapshot})});const result=await response.json();
+  if(response.status===409){conflict=true;throw Error(result.error);}
+  if(!response.ok)throw Error(result.error||'서버 저장에 실패했습니다.');
+  revision=result.revision;acknowledged=sent;cacheRecovery();
+ }catch(e){syncError=e.message||'서버 연결을 확인하세요. 변경 내용은 이 브라우저에 임시 보관됩니다.';cacheRecovery();}
+ finally{saving=false;updateSync();if(!syncError&&dirty>acknowledged)saveTimer=setTimeout(flushServer,0);}
+}
+async function reloadServer(){
+ if((conflict||dirty>acknowledged)&&!confirm('현재 PC의 미전송 변경은 백업 버튼으로 먼저 보관하세요. 서버 기록으로 교체할까요?'))return;
+ try{const response=await fetch('/api/state');if(!response.ok)throw Error('서버 기록을 불러오지 못했습니다. 로그인과 연결을 확인하세요.');const data=await response.json();state=validateBackup(data.state);revision=data.revision;dirty=acknowledged=0;conflict=false;syncError='';cacheRecovery();render();toast('서버의 최신 기록을 불러왔습니다.');}catch(e){toast(e.message);}
+}
+function bindAccount(){
+ $('#sync-backup')?.addEventListener('click',()=>download('gamedev-unsent-backup.json',JSON.stringify(state,null,2),'application/json'));
+ $('#sync-reload')?.addEventListener('click',reloadServer);
+ $('#sync-retry')?.addEventListener('click',()=>{syncError='';flushServer();});
+ $('#logout')?.addEventListener('click',async()=>{await flushServer();if(dirty>acknowledged||conflict){toast('먼저 미전송 변경을 백업하거나 서버에 저장해 주세요.');return;}const response=await fetch('/api/logout',{method:'POST',headers:apiHeaders(),body:'{}'});if(response.ok)location.reload();else toast('로그아웃에 실패했습니다. 다시 시도하세요.');});
+ updateSync();
+}
+function loginScreen(message=''){
+ $('#app').innerHTML=`<div class="login-page"><a class="brand" href="/"><span class="brand-icon">G<sup>↗</sup></span><span>GameDev <b>Lab</b></span></a><section><span class="pill">YOUR PERSONAL LEARNING SPACE</span><h1>어디서든 이어지는,<br>나의 게임 개발 연구실.</h1><p>문제를 풀고, 근거를 남기고, 한 단계씩 성장하세요.<br>사이트 소유자의 GitHub 계정으로 로그인해 시작합니다.</p>${message?`<div class="warning">${esc(message)}</div>`:''}<a class="btn primary" href="/auth/github">GitHub으로 로그인 →</a><small>학습 기록은 서버에 저장되어 다른 PC에서도 이어집니다.</small></section></div>`;
+}
+async function bootstrap(){
+ try{const response=await fetch('/api/session');if(!response.ok)throw Error('서버 연결을 확인하세요. 새로고침하면 다시 시도합니다.');account=await response.json();
+  if(hosted()&&!account.authenticated){loginScreen();return;}
+  if(hosted()){
+   const response=await fetch('/api/state');if(!response.ok)throw Error('학습 기록을 읽지 못했습니다. 다시 로그인하세요.');const data=await response.json();state=validateBackup(data.state);revision=data.revision;storageWarning='';
+   try{const cached=JSON.parse(localStorage.getItem(recoveryKey()));if(cached?.pending){state=validateBackup(cached.state);dirty=1;if(cached.revision!==revision){conflict=true;revision=cached.revision;}}}catch{syncError='브라우저 임시 백업을 읽지 못했습니다. 서버 기록을 사용합니다.';}
+  }
+  state.gitPublications ||= {};if(ensureDaily(state,today()))save();
+  ready=true;render();if(hosted()&&!conflict&&dirty)flushServer();
+  try{const projectResponse=await fetch('/api/project');if(projectResponse.ok){project=await projectResponse.json();if(route==='project')projectPage();}}catch{if(route==='project')toast('프로젝트 정보를 불러오지 못했습니다. 기록과 학습 기능은 계속 사용할 수 있습니다.');}
+ }catch(e){loginScreen(e.message);}
+}
+function download(name,text,type='text/markdown'){const a=document.createElement('a'),url=URL.createObjectURL(new Blob([text],{type}));a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+function setRoute(r){location.hash=r;}
+function layout(title,kicker,content){
+ destroyEditor();destroyEditor=()=>{};
+ $('#app').innerHTML=`<aside class="sidebar"><a href="#dashboard" class="brand"><span class="brand-icon">G<sup>↗</sup></span><span>GameDev <b>Lab</b></span></a><div class="nav-label">PERSONAL WORKSPACE</div><nav>${[['dashboard','▦','대시보드'],['daily','✓','일일 학습'],['roadmap','⌁','학습 로드맵'],['problems','⌘','문제 라이브러리'],['records','▤','학습 기록'],['project','◇','프로젝트 안내']].map(([r,i,l])=>`<a class="nav-item ${route===r||(r==='problems'&&route.startsWith('practice/'))?'selected':''}" href="#${r}"><span>${i}</span>${l}${r==='problems'?`<small>${String(problems.length).padStart(2,'0')}</small>`:''}</a>`).join('')}</nav><div class="side-course"><span>나의 학습 과정 <i>↗</i></span><h3>게임 코드를 읽는 힘</h3><p>이해하고, 검증하고, 개선하기</p><div class="progress"><i style="width:${passed()/problems.length*100}%"></i></div><div class="progress-caption">테스트 통과 <b>${passed()} / ${problems.length}</b></div></div><div class="sidebar-bottom"><div class="local"><i></i> ${hosted()?'어디서든 나의 워크스페이스':'나만의 로컬 워크스페이스'}</div><div class="profile"><span class="avatar">M</span><div><b>${esc(account?.login||'MyoungJoon')}</b><small>Game developer in progress</small></div><span>⌄</span></div></div></aside><div class="shell"><header><span>워크스페이스 <i>/</i> <b>${esc(title)}</b></span><div><span class="private cloud-state">${hosted()?'서버에 저장됨':'♧ 개인 학습 공간'}</span>${hosted()?'<button id="logout" class="logout-button">로그아웃</button>':''}<span class="mini-avatar">M</span></div></header><main><div class="page-heading"><div><span class="eyebrow">${kicker}</span><h1>${esc(title)}<em>.</em></h1></div><time>${new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',year:'numeric',month:'long',day:'numeric',weekday:'long'}).format(new Date())}</time></div><div id="sync-banner" class="sync-banner" hidden><span></span><div><button id="sync-backup" class="btn outline">이 PC 기록 백업 ↓</button><button id="sync-retry" class="btn outline">저장 재시도</button><button id="sync-reload" class="btn outline">서버 기록 불러오기</button></div></div>${storageWarning?`<div class="warning">${esc(storageWarning)}</div>`:''}${content}<footer><span>차근차근 이해하고, 근거로 증명하는 개발자.</span><small>GAMEDEV LAB / PERSONAL LEARNING SPACE</small></footer></main></div>`;bindAccount();
+}
+function problemCard(p){const result=status(getDraft(p));return `<a href="#practice/${p.id}" class="problem-card"><div class="card-top"><span class="level ${p.level==='중급'?'medium':''}">${p.level}</span><span>↗</span></div><span class="problem-id">LAB ${String(problems.indexOf(p)+1).padStart(2,'0')} <i>· ${stages[p.stage].title}</i></span><h3>${p.title}</h3><p>${p.sub}</p><div class="tags">${p.tags.map(t=>`<span>${t}</span>`).join('')}</div><div class="card-bottom"><span>◷ ${p.minutes}분 <i>·</i> ${p.runner?'C# 자동 채점':'Unity 외부 검증'}</span><b class="${result==='통과'?'green':''}">${result==='미검증'?'시작하기 →':result}</b></div></a>`;}
+function dashboard(){
+ layout('대시보드','YOUR GAME DEVELOPMENT JOURNEY',`<section class="hero"><div class="hero-copy"><span class="pill"><i></i> LEARN BY BUILDING</span><h2>만드는 것에서,<br><em>이해하는 것</em>으로.</h2><p>게임 속 작은 기능을 직접 구현하고, 디버깅하고, 개선하세요.<br>나의 문제 해결 과정이 개발자 포트폴리오가 됩니다.</p><div class="hero-actions"><a class="btn primary" href="#daily">오늘의 3문제 시작하기 <span>→</span></a><a href="#roadmap" class="text-link">학습 과정 살펴보기 ↗</a></div><div class="hero-foot">Unity <i>·</i> C# <i>·</i> Netcode for GameObjects</div></div><div class="hero-art" aria-hidden="true"><div class="orbit"></div><div class="orbit second"></div><span class="float-label code-float">&lt;/&gt; build your logic</span><div class="platform"><div class="cube c1"></div><div class="cube c2"></div><div class="cube c3"></div><div class="cube c4"></div></div><span class="float-label check-float">✓ 한 줄씩, 더 단단하게</span><span class="dot dot1"></span><span class="dot dot2"></span><span class="cross">+</span></div></section>${dailyDashboard(state)}<section class="stats"><div><span class="stat-icon purple">⌁</span><div><small>나의 학습 과정</small><strong>08 <span>개의 단계</span></strong></div><small class="stat-detail">기초부터 네트워크까지</small></div><div><span class="stat-icon blue">⌘</span><div><small>테스트 통과 문제</small><strong>${String(passed()).padStart(2,'0')} <span>/ ${String(problems.length).padStart(2,'0')}</span></strong></div><small class="stat-detail">근거를 쌓아가요</small></div><div><span class="stat-icon peach">▤</span><div><small>저장한 풀이 이력</small><strong>${String(state.history.length).padStart(2,'0')} <span>개의 기록</span></strong></div><small class="stat-detail">나만의 성장 아카이브</small></div></section><div class="dashboard-grid"><div><div class="section-heading"><div><h2>오늘의 추천 실습 <span class="badge">START HERE</span></h2><p>실행 흐름을 읽는 것부터 가볍게 시작해 보세요.</p></div><a href="#problems">전체 문제 보기 →</a></div><div class="recommended">${problems.slice(0,2).map(problemCard).join('')}</div><section class="record-banner"><span>↗</span><div><h3>풀이의 끝은, 기록의 시작.</h3><p>가설부터 검증까지 Markdown으로 정리하고 GitHub에 남겨보세요.</p></div><a class="btn outline" href="#records">기록 살펴보기 ↗</a></section></div><aside class="diagnostic-card"><span class="eyebrow">YOUR NEXT STEP</span><span class="diagnostic-icon">⌁</span><h3>지금, 어디쯤인가요?</h3><p>짧은 코드 읽기 진단으로<br>나의 출발점을 확인해 보세요.</p><ul><li>조건문과 상태 변화</li><li>네트워크 실행 위치</li><li>측정에 기반한 판단</li></ul><a class="btn dark" href="#diagnosis">${state.diagnosis?'나의 진단 다시 보기':'5분 수준 진단'} <span>→</span></a><small>6문항 · 정답보다 생각하는 과정이 중요해요</small></aside></div>`);
+}
+function daily(){
+ layout('일일 학습','THREE SMALL STEPS EVERY DAY',dailyPage(state,selectedDay,calendarMonth));
+ $('#daily-date').onchange=e=>{if(!e.target.value)return;selectedDay=e.target.value;calendarMonth=selectedDay.slice(0,7);daily();};
+ document.querySelectorAll('[data-day]').forEach(b=>b.onclick=()=>{selectedDay=b.dataset.day;daily();});
+ const move=amount=>{const [y,m]=calendarMonth.split('-').map(Number),date=new Date(Date.UTC(y,m-1+amount,1));calendarMonth=date.toISOString().slice(0,7);daily();};
+ $('#month-prev').onclick=()=>move(-1);$('#month-next').onclick=()=>move(1);
+ $('#go-today').onclick=()=>{selectedDay=today();calendarMonth=selectedDay.slice(0,7);daily();};
+}
+function roadmap(){layout('학습 로드맵','SMALL STEPS, SOLID FOUNDATIONS',`<div class="notice"><div><h3>날짜보다, 설명할 수 있는지가 중요합니다.</h3><p>첨부 노트 01–12장은 기본 참고, 13장은 실전 연결, 14장은 필요할 때 확장합니다.</p></div><a class="btn outline" href="#diagnosis">내 출발점 진단 →</a></div><div class="roadmap">${stages.map((s,i)=>`<section class="stage"><span class="stage-number">${String(i+1).padStart(2,'0')}</span><div><span class="eyebrow">핵심노트 ${s.ref}</span><h2>${s.title}</h2><p>${s.sub}</p><div class="stage-goal"><b>완료 기준</b> ${s.goal}</div><div class="tags">${problems.filter(p=>p.stage===i).map(p=>`<a href="#practice/${p.id}">${p.title} ↗</a>`).join('')}</div></div></section>`).join('')}</div>`);}
+function filtered(){const ps=problems.filter(p=>(filter==='전체'||p.level===filter)&&(p.title+p.tags.join('')+stages[p.stage].title).toLowerCase().includes(query.toLowerCase()));return ps.length?ps.map(problemCard).join(''):'<div class="empty">검색 결과가 없습니다. 다른 검색어를 입력해 보세요.</div>';}
+function library(){layout('문제 라이브러리','PRACTICE WITH PURPOSE',`<div class="section-heading"><p>작은 기능 하나를 끝까지 이해하는 연습. ${problems.length}개의 실습이 준비되어 있어요.</p></div><div class="library-tools"><div class="filters">${['전체','입문','기초','중급'].map(f=>`<button class="chip ${f===filter?'active':''}" data-filter="${f}">${f}</button>`).join('')}</div><input id="search" type="search" placeholder="문제, 태그 검색" aria-label="문제 검색" value="${esc(query)}"></div><div class="problem-grid" id="problem-grid">${filtered()}</div>`);$('#search').oninput=e=>{query=e.target.value;$('#problem-grid').innerHTML=filtered();};document.querySelectorAll('[data-filter]').forEach(b=>b.onclick=()=>{filter=b.dataset.filter;library();});}
+function diagnosisResult(){if(!state.diagnosis)return '';const answers=state.diagnosis.answers,score=quiz.filter((q,i)=>q.answer===answers[i]).length;return `<section class="result-panel"><span class="eyebrow">코드 읽기 진단 결과</span><h2>${score} / 6 문항 정답</h2><p>${score<4?'조건과 상태 변화를 한 줄씩 다시 따라가 보세요.':'다음은 실제 중단점과 변수 값으로 예상 결과를 확인할 차례입니다.'} 이 진단으로 비동기·Profiler·디버거 숙련도를 단정하지 않습니다.</p>${quiz.map((q,i)=>`<div class="explanation"><b class="${q.answer===answers[i]?'green':'orange'}">${q.answer===answers[i]?'✓':'↻'} 0${i+1}</b> ${q.why}</div>`).join('')}<a href="#practice/pocket" class="btn primary">첫 실습으로 연결하기 →</a></section>`;}
+function diagnosis(){layout('수준 진단','UNDERSTAND YOUR STARTING POINT',`<section class="diagnosis-intro"><div><span class="pill">BASELINE CHECK</span><h2>실행하기 전에,<br>결과를 예상해 보세요.</h2><p>같은 인스턴스에서 호출한다고 가정합니다.<br>확신이 없으면 ‘모르겠음’을 선택해도 괜찮아요.</p></div><pre><code>int count = 4;
+const int max = 5;
+
+bool TryPickUp() {
+    if (count >= max) return false;
+    count += 1;
+    return true;
+}</code></pre></section><form id="quiz-form"><div class="quiz-grid">${quiz.map((q,i)=>`<fieldset class="quiz-card"><legend><span>0${i+1}</span> ${q.q}</legend>${q.options.map((o,j)=>`<label class="option"><input type="radio" name="q${i}" value="${j}" ${state.diagnosis?.answers[i]===j?'checked':''} required> ${o}</label>`).join('')}</fieldset>`).join('')}</div><button class="btn primary" type="submit">내 출발점 확인하기 →</button></form><div id="quiz-result" aria-live="polite">${diagnosisResult()}</div>`);$('#quiz-form').onsubmit=e=>{e.preventDefault();const data=new FormData(e.target);state.diagnosis={answers:quiz.map((_,i)=>Number(data.get('q'+i))),date:new Date().toISOString()};save();$('#quiz-result').innerHTML=diagnosisResult();$('#quiz-result').scrollIntoView({behavior:'smooth'});};}
+function practice(id){const p=problems.find(p=>p.id===id);if(!p){setRoute('problems');return;}
+ const d=getDraft(p);const day=dailyProgress(state,today()),ordinal=day.entry?.problemIds.indexOf(p.id)??-1;layout('실습 워크스페이스','THINK · BUILD · VERIFY',`<div class="practice-header"><a href="#problems">← 문제 목록</a>${ordinal>=0?`<a class="daily-practice-badge" href="#daily">오늘의 할당 ${ordinal+1}/3 · ${day.entry.completed[p.id]?'완료':'미완료'}</a>`:''}<div class="tags">${p.tags.map(t=>`<span>${t}</span>`).join('')}</div></div><div class="practice-layout"><section class="problem-description"><span class="eyebrow">LAB ${String(problems.indexOf(p)+1).padStart(2,'0')} · ${p.level} · ${p.minutes}분</span><h2>${p.title}</h2><p>${p.text}</p><h3>구현 요구사항</h3><ul>${p.requirements.map(r=>`<li>${r}</li>`).join('')}</ul><h3>확인할 테스트</h3><table><thead><tr><th>조건</th><th>입력</th><th>기대 결과</th></tr></thead><tbody>${p.cases.map(row=>`<tr>${row.map(x=>`<td>${x}</td>`).join('')}</tr>`).join('')}</tbody></table><details><summary>막혔나요? 힌트 보기</summary><p>${p.hint}</p></details><div class="reference"><b>핵심노트 연결 · ${stages[p.stage].ref}장</b><p>${stages[p.stage].goal}</p><small>어디에서 실행되는가 → 누가 결정하는가 → 무엇을 전달하는가 → 어떻게 확인하는가</small></div></section><section class="workbench"><div class="tabs">${[['code','풀이 작성'],['results','검증 결과'],['notes','분석 노트']].map(([key,name])=>`<button data-tab="${key}" class="${tab===key?'active':''}">${name}</button>`).join('')}<span id="saved">${hosted()?'서버에 자동 저장':'자동 로컬 저장'}</span></div>${workContent(p,d)}<div id="run-status" class="run-status" aria-live="polite"></div><div class="work-actions"><button class="btn outline" id="export">Markdown ↓</button>${p.runner?'<button class="btn dark" id="run">C# 실행·채점 ▷</button>':''}<button class="btn primary" id="submit">풀이 기록하기 →</button></div></section></div>`);
+ document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{tab=b.dataset.tab;practice(id);});bindWorkbench(p);
+}
+function workContent(p,d){
+ if(tab==='results')return `<div class="results"><span class="status-badge">${status(d)}</span><h3>${d.report?'테스트 결과':'실제 실행 결과를 연결하세요'}</h3><p>${p.runner?`C# 실행·채점은 ${hosted()?'서버의 격리 환경':'로컬 .NET'}에서 실제 코드를 컴파일하고 공개된 테스트를 실행합니다.`:'Unity 실습은 로컬 에디터의 Test Runner에서 실행하고 NUnit XML을 가져오세요.'} 외부 파일의 진위와 현재 코드와의 대응은 사용자가 확인해야 합니다.</p><label class="btn outline upload">테스트 보고서 가져오기<input id="report-file" type="file" accept=".json,.xml" hidden></label><small>JSON v1 ${p.runner?'· 이 문제의 필수 테스트 모두 실행 필요':'또는 Unity Test Runner XML'} · 2MB 이하</small>${p.id==='pocket'?'<div class="test-explanation"><b>반복 호출은 채점기가 수행합니다.</b><p>각 테스트는 초기 수량 4개의 새 포켓으로 시작합니다. 반복 요청 테스트 안에서는 같은 포켓의 TryPickUpWood()를 100번 호출해, 첫 1회 성공 후 나머지 99회가 거부되는지 확인합니다. 풀이 코드에 반복문을 넣을 필요는 없습니다.</p></div>':''}${d.report?`<div class="report-origin">${d.origin==='server'?'서버 격리 C# 실행':d.origin==='local'?'로컬 .NET 실제 실행':'사용자 제공 외부 결과'} · ${esc(d.report.runner)}</div>${d.report.source!==d.code?'<div class="warning">현재 코드가 실행한 원문과 다릅니다. 수정 후 다시 검증하세요.</div>':''}<ul class="test-list">${d.report.tests.map(t=>`<li><span title="${esc(t.name)}">${esc(testNames[t.name]||t.name)}</span><b class="${t.status==='passed'?'green':'orange'}">${t.status}</b><small>${esc(t.actual)}</small></li>`).join('')}</ul>`:'<div class="empty compact">아직 연결된 테스트 결과가 없습니다.</div>'}<div class="feedback"><span class="eyebrow">문제별 학습 가이드</span><p>${p.feedback}</p><small>제출 코드의 자동 리뷰나 성능 측정 결과가 아닌 학습 설명입니다.</small></div></div>`;
+ if(tab==='notes')return `<div class="notes-form">${[['approach','첫 접근과 가설','선택한 자료구조, 예상한 실행 흐름과 결과'],['notes','재현 · 근거 · 수정 · 회귀 검증','증상 / 재현 순서 / 변수·로그·호출 스택 / 최소 수정 / 재검증'],['performance','성능 비교와 선택 이유','씬, 대상 수, 호출 빈도, 기기, 빌드, CPU ms, GC Alloc B, 반복 측정 횟수'],['ai','AI 도움을 받은 범위','받은 제안과 내가 직접 설명하고 검증한 부분'],['next','다음 실험','남은 경계값과 아직 검증하지 못한 조건']].map(([key,label,placeholder])=>`<label>${label}<textarea data-field="${key}" placeholder="${placeholder}">${esc(d[key]||'')}</textarea></label>`).join('')}</div>`;
+ return `<div class="editor-toolbar"><span><i></i> ${p.id==='pocket'?'PocketPractice.cs':p.id==='slots'?'SlotPractice.cs':'Solution.cs'}</span><button id="source-download">.cs 다운로드 ↓</button><span>C# · UTF-8</span></div><div class="code-editor"><div class="line-gutter" aria-hidden="true"><div class="line-numbers"></div></div><div class="code-surface"><pre class="code-highlight" aria-hidden="true"><code></code></pre><textarea id="code" data-field="code" aria-label="C# 풀이 코드" spellcheck="false" autocomplete="off" autocapitalize="off" autocorrect="off" wrap="off">${esc(d.code)}</textarea></div></div><div class="editor-legend" aria-label="C# 색상 안내"><span class="cs-keyword">키워드</span><span class="cs-type">클래스·자료형</span><span class="cs-function">함수·메서드</span><span class="cs-variable">변수</span><span class="cs-string">문자열</span><span class="cs-comment">주석</span></div><div class="editor-shortcuts">괄호 자동 닫기 · Enter 들여쓰기 · Tab / Shift+Tab 정렬 · Esc 다음 Tab으로 편집기 밖 이동</div><div class="editor-note">ⓘ ${hosted()?'코드는 서버의 격리 환경에서 실행됩니다. PC에 SDK를 설치하지 않아도 됩니다.':'로컬 실행기는 파일·네트워크 접근을 격리하지 않습니다. 본인 코드만 실행하세요.'}</div><div class="approach"><label>나의 첫 접근<textarea data-field="approach" placeholder="예상 결과와 선택 이유를 먼저 적어보세요.">${esc(d.approach||'')}</textarea></label></div>`;
+}
+function unityReport(text,p,d){
+ if(p.runner)throw Error('C# 자동 채점 문제는 필수 테스트가 포함된 JSON 보고서를 사용하세요.');
+ if(/<!DOCTYPE|<!ENTITY/i.test(text))throw Error('DOCTYPE이 없는 Test Runner XML을 사용하세요.');
+ const xml=new DOMParser().parseFromString(text,'application/xml');
+ if(xml.querySelector('parsererror')||!['test-run','test-results'].includes(xml.documentElement.tagName))throw Error('Unity NUnit 테스트 결과 XML을 확인하세요.');
+ const cases=[...xml.querySelectorAll('test-case')];if(!cases.length)throw Error('실행한 테스트가 없는 보고서는 검증으로 처리할 수 없습니다.');
+ const tests=cases.map(t=>({name:t.getAttribute('fullname')||t.getAttribute('name')||'unnamed',status:/^(Passed|Success)$/i.test(t.getAttribute('result'))?'passed':/^(Failed|Failure|Error)$/i.test(t.getAttribute('result'))?'failed':'skipped',actual:t.querySelector('message')?.textContent||t.getAttribute('result')||'unknown'}));
+ return validateReport({schemaVersion:1,problemId:p.id,source:d.code,runner:'Unity NUnit XML · 코드 대응은 사용자 확인',tests},p.id);
+}
+function gradeErrorMessage(error){
+ const message=error?.message||'채점 요청을 완료하지 못했습니다.';
+ if(/failed to fetch|networkerror|network request failed|load failed|fetch failed/i.test(message)){
+  return hosted()?'채점 서버에 연결하지 못했습니다. 인터넷 연결을 확인한 뒤 다시 시도하세요.':'로컬 채점 서버에 연결하지 못했습니다. 프로젝트 폴더에서 npm.cmd start를 실행하고, 해당 PowerShell 창을 닫지 않은 상태로 다시 채점하세요. 창은 최소화해도 됩니다. 입력한 코드는 유지됩니다.';
+ }
+ return message;
+}
+function bindWorkbench(p){
+ document.querySelectorAll('[data-field]').forEach(el=>el.oninput=()=>{state.drafts[p.id]={...getDraft(p),[el.dataset.field]:el.value,updatedAt:new Date().toISOString()};save();});
+ destroyEditor=mountCodeEditor($('#code'));
+ $('#source-download')?.addEventListener('click',()=>download(p.id==='pocket'?'PocketPractice.cs':p.id==='slots'?'SlotPractice.cs':'Solution.cs',getDraft(p).code,'text/plain'));
+ $('#export').onclick=()=>download(p.id+'.md',markdown(p,getDraft(p)));
+ $('#submit').onclick=()=>{const d=structuredClone(getDraft(p));state.drafts[p.id]=d;state.history.unshift({id:crypto.randomUUID(),problemId:p.id,date:new Date().toISOString(),draft:d});save();toast('풀이 이력 저장 · '+status(d));};
+ $('#run')?.addEventListener('click',async()=>{
+  const button=$('#run'),message=$('#run-status'),source=getDraft(p).code;button.disabled=true;button.textContent='실행 중…';message.classList.remove('run-error');message.textContent=(hosted()?'서버 격리 환경':'로컬 .NET')+'에서 컴파일·실행 중입니다. 최대 60초가 걸릴 수 있습니다.';
+  try{const response=await fetch('/api/grade',{method:'POST',headers:apiHeaders(),body:JSON.stringify({problemId:p.id,source})});const data=await response.json();if(!response.ok)throw Error(data.error+'\n'+(data.log||''));const report=validateReport(data.report,p.id);state.drafts[p.id]={...getDraft(p),report,origin:hosted()?'server':'local',updatedAt:new Date().toISOString()};if(status(state.drafts[p.id])==='통과')completeDaily(state,p.id,report);save();if(route==='practice/'+p.id){tab='results';practice(p.id);}toast('실제 테스트 완료 · '+status(state.drafts[p.id]));}
+  catch(e){if(message.isConnected){message.textContent=gradeErrorMessage(e);message.classList.add('run-error');}}
+  finally{if(button.isConnected){button.disabled=false;button.textContent='C# 실행·채점 ▷';}}
+ });
+ $('#report-file')?.addEventListener('change',async e=>{try{const file=e.target.files[0];if(!file)return;if(file.size>2e6)throw Error('2MB 이하 보고서를 사용하세요.');const text=await file.text();const d=getDraft(p),report=file.name.toLowerCase().endsWith('.xml')?unityReport(text,p,d):validateReport(JSON.parse(text),p.id);state.drafts[p.id]={...d,report,origin:'external',updatedAt:new Date().toISOString()};save();practice(p.id);toast('사용자 제공 외부 결과를 연결했습니다.');}catch(e){toast(e.message);}});
+}
+function records(){layout('학습 기록','YOUR PROCESS IS YOUR PORTFOLIO',`<div class="notice"><div><h3>문제 해결 과정이 나의 포트폴리오가 됩니다.</h3><p>${hosted()?'기록은 계정에 연결된 서버에 저장됩니다. 다른 PC에서 같은 계정으로 로그인해 이어가세요.':'이 브라우저에만 저장됩니다. 데이터 삭제·기기 변경 전에 백업하세요.'} GitHub에는 내려받은 Markdown을 직접 올릴 수 있습니다.</p></div></div><div class="record-actions"><button class="btn primary" id="backup">전체 기록 백업 ↓</button><label class="btn outline upload">백업 복원<input id="restore" type="file" accept=".json" hidden></label><button class="btn outline" id="template">Markdown 템플릿 ↓</button><button class="btn primary" id="compose-commits" ${state.history.length?'':'disabled'}>일자별 커밋 자동 작성</button></div><div class="section-heading"><h2>풀이 이력 <span class="count">${state.history.length}</span></h2></div>${state.history.length?`<div>${state.history.map(h=>{const p=problems.find(p=>p.id===h.problemId);return `<article class="record-row"><span class="record-icon">&lt;/&gt;</span><div><a href="#practice/${p.id}"><h3>${p.title}</h3></a><small>${new Date(h.date).toLocaleString('ko-KR',{timeZone:'Asia/Seoul'})} · ${status(h.draft)}</small></div><button class="btn outline" data-preview="${esc(h.id)}">미리보기</button><button class="icon-button" data-download="${esc(h.id)}" aria-label="Markdown 다운로드">↓</button><button class="delete-record" data-delete-record="${esc(h.id)}" aria-label="${p.title} 기록 삭제">삭제</button></article>`;}).join('')}</div>`:'<div class="empty large"><span>▤</span><h3>첫 번째 성장 기록을 기다리고 있어요.</h3><p>풀이 코드와 가설을 작성한 뒤 ‘풀이 기록하기’를 눌러보세요.</p><a href="#practice/pocket" class="btn primary">첫 실습 시작하기 →</a></div>'}<dialog id="preview"><div class="dialog-head"><h3>Markdown 미리보기</h3><button id="close-dialog" class="icon-button" aria-label="닫기">×</button></div><pre id="preview-text"></pre><button class="btn primary" id="preview-download">Markdown 다운로드 ↓</button></dialog>`);
+ $('#backup').onclick=()=>download('gamedev-lab-backup.json',JSON.stringify(state,null,2),'application/json');
+ $('#template').onclick=()=>download('solution-template.md',markdown(problems[0],{code:'// 직접 작성한 풀이'}));
+ $('#restore').onchange=async e=>{try{const f=e.target.files[0];if(!f)return;if(f.size>5e6)throw Error('백업은 5MB 이하여야 합니다.');const backup=validateBackup(JSON.parse(await f.text()));const ids=new Set(state.history.map(h=>h.id));state.drafts={...state.drafts,...backup.drafts};state.history=[...backup.history.filter(h=>!ids.has(h.id)),...state.history];state.daily=mergeDaily(state.daily,backup.daily);state.gitPublications={...state.gitPublications,...backup.gitPublications};if(backup.diagnosis)state.diagnosis=backup.diagnosis;storageWarning='';save();records();toast('백업을 병합했습니다. 동일 문제의 초안은 가져온 내용으로 갱신됩니다.');}catch(e){toast(e.message);}};
+ document.querySelectorAll('[data-preview]').forEach(b=>b.onclick=()=>{const h=state.history.find(h=>h.id===b.dataset.preview),text=markdown(problems.find(p=>p.id===h.problemId),h.draft,{date:dayKey(h.date)});$('#preview-text').textContent=text;$('#preview-download').onclick=()=>download(h.problemId+'.md',text);$('#preview').showModal();});
+ document.querySelectorAll('[data-download]').forEach(b=>b.onclick=()=>{const h=state.history.find(h=>h.id===b.dataset.download);download(h.problemId+'.md',markdown(problems.find(p=>p.id===h.problemId),h.draft,{date:dayKey(h.date)}));});
+ document.querySelectorAll('[data-delete-record]').forEach(b=>b.onclick=()=>{const id=b.dataset.deleteRecord;if(!confirm('이 학습 기록을 삭제할까요? 풀이 초안·일일 달성 현황·이미 업로드한 Git 기록은 유지됩니다.'))return;state.history=state.history.filter(h=>h.id!==id);save();records();toast('학습 기록을 삭제했습니다.');});
+ $('#compose-commits').onclick=()=>openPublicationDialog(structuredClone(state.history),{headers:apiHeaders,download,onResults:data=>{state.gitPublications ||= {};for(const r of data.results){if(r.commit)state.gitPublications[r.date]={commit:r.commit,branch:data.branch,repository:data.repository,pushed:data.pushed};}save();}}).catch(e=>toast(e.message));
+ $('#close-dialog').onclick=()=>$('#preview').close();
+}
+function projectPage(){layout('프로젝트 안내','CONNECT YOUR PRACTICE TO YOUR PROJECT',`<div class="notice"><div><h3>로컬 Unity 프로젝트와 함께 연습하세요.</h3><p>웹은 문제와 기록을 관리하고, 실제 Unity 동작은 에디터에서 확인합니다. 패키지 등록과 MCP 서버 연결 상태는 별개입니다.</p></div></div><section class="project-status"><div><span class="eyebrow">UNITY EDITOR</span><h2>${esc(project?.unityVersion||'확인 중')}</h2><p>unity/ProjectSettings 기준</p></div><div><span class="eyebrow">UNITY MCP</span><h2>${project?.mcpPackage?'패키지 등록됨':'확인 필요'}</h2><p>실행 중인 MCP 연결은 확인하지 않음</p></div><div><span class="eyebrow">NETCODE FOR GAMEOBJECTS</span><h2>${project?.ngoPackage?esc(project.ngoPackage):'미등록'}</h2><p>NGO 실습 전 로컬 패키지 설정 필요</p></div></section><div class="project-grid"><section class="guide-card"><span class="eyebrow">01 / LOCAL UNITY WORKFLOW</span><h2>에디터에서 검증하고, 기록으로 연결하기</h2><ol><li>Unity Hub에서 저장소의 unity/ 폴더를 엽니다.</li><li>문제를 선택하고 Assets 안에 실습 코드를 작성합니다.</li><li>Test Runner의 EditMode/PlayMode 테스트를 실제 실행합니다.</li><li>Save Results로 NUnit XML을 저장합니다.</li><li>같은 코드 원문을 사이트에 붙이고 검증 결과에서 XML을 가져옵니다.</li></ol><p>XML의 테스트 대상과 현재 풀이가 일치하는지 직접 확인하세요. 웹은 Unity를 실행하거나 MCP 상태를 조회하지 않습니다.</p></section><section class="guide-card"><span class="eyebrow">02 / SMALL, MEANINGFUL COMMITS</span><h2>한 커밋에는 한 가지 목적</h2><pre>fix(inventory): 가득 찬 포켓의 집기를 거부
+
+이유: 최대 수량에서 6개까지 증가함
+변경: 조건을 &gt;에서 &gt;=로 수정
+검증: 정상·경계·반복 테스트 통과</pre><p>feat · fix · refactor · test · docs · perf · chore</p><button id="commit-download" class="btn outline">커밋 템플릿 다운로드 ↓</button><small>로컬 적용: git config --local commit.template .gitmessage</small></section></div>`);$('#commit-download').onclick=()=>download('.gitmessage','종류(범위): 변경 내용 한 줄\n\n이유: \n변경: \n검증: \n','text/plain');}
+function render(){if(!ready)return;route=location.hash.slice(1)||'dashboard';if(route.startsWith('practice/'))practice(route.split('/')[1]);else ({dashboard,daily,roadmap,problems:library,diagnosis,records,project:projectPage}[route]||dashboard)();window.scrollTo(0,0);}
+window.addEventListener('hashchange',()=>{tab='code';render();});
+window.addEventListener('beforeunload',e=>{if(hosted()&&(dirty>acknowledged||conflict)){e.preventDefault();e.returnValue='';}});
+$('#app').innerHTML='<div class="loading-page">연구실을 불러오는 중…</div>';
+bootstrap();
+
+function rollDay(){if(!ready||today()===lastDay)return;const next=today();if(selectedDay===lastDay){selectedDay=next;calendarMonth=next.slice(0,7);}lastDay=next;if(ensureDaily(state,next))save();if(route==='daily'||route==='dashboard')render();}
+setInterval(rollDay,30000);window.addEventListener('focus',rollDay);

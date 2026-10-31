@@ -1,0 +1,18 @@
+{
+  "name": "gamedev-lab",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "start": "node server.mjs",
+    "dev": "node server.mjs",
+    "check": "node --check server.mjs && node --check backend/auth.mjs && node --check backend/store.mjs && node --check backend/isolated-grader.mjs && node --check tooling/grader.mjs && node --check site/app.js && node --check site/lib/model.js && node --check site/lib/data.js && node --check site/lib/csharp.js && node --check site/lib/code-editor.js && node --check site/lib/editor-actions.js && node --check backend/git-publisher.mjs && node --check site/lib/basic-problems.js && node --check site/lib/daily.js && node --check site/lib/daily-view.js && node --check site/lib/portfolio.js && node --check site/lib/publication-dialog.js && node --check tooling/basic-test-code.mjs",
+    "test": "node tests/model.test.mjs && node tests/csharp.test.mjs && node tests/editor-actions.test.mjs && node tests/grader.test.mjs && node tests/basic-grader.test.mjs",
+    "test:hosted": "node tests/hosted.test.mjs && node tests/isolated.test.mjs",
+    "test:editor": "node tests/csharp.test.mjs && node tests/editor-actions.test.mjs",
+    "test:learning": "node tests/daily.test.mjs && node tests/portfolio.test.mjs && node tests/git-publisher.test.mjs && node tests/git-api.test.mjs"
+  }
+}
