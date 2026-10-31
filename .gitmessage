@@ -1,0 +1,8 @@
+# 종류(범위): 변경 내용 한 줄
+# 예: feat(inventory): 같은 아이템을 슬롯당 5개까지 쌓기
+# 종류: feat 기능 / fix 버그 / refactor 구조 / test 테스트 / docs 문서 / perf 성능 / chore 설정
+# 범위: inventory, interaction, ui, ngo, web 등 (생략 가능)
+
+# 이유: 왜 바꿨는가?
+# 변경: 무엇을 바꿨는가?
+# 검증: 어떤 조건에서 확인했는가? 실행하지 못했으면 '미실행'과 이유

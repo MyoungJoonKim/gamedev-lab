@@ -1,0 +1,13 @@
+{
+  "name": "gamedev-lab",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node server.mjs",
+    "dev": "node server.mjs",
+    "check": "node --check server.mjs && node --check tooling/grader.mjs && node --check site/app.js && node --check site/lib/model.js && node --check site/lib/data.js",
+    "test": "node tests/model.test.mjs && node tests/grader.test.mjs"
+  }
+}
