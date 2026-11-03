@@ -1,28 +1,7 @@
-# Learning site generated files and credentials
-node_modules/
-.tooling/
-__pycache__/
-.data/
-*.log
-.env
-.env.*
-!.env.hosted.example
-*.sqlite
-*.sqlite-shm
-*.sqlite-wal
-
-# Old root Unity caches retained on existing local checkouts after relocation
-/Library/
-/Temp/
-/Obj/
-/Build/
-/Builds/
-/Logs/
-/UserSettings/
-/MemoryCaptures/
-/Recordings/
-/.vs/
-/.utmp/
-/*.csproj
-/*.sln
-/*.slnx
+# Public portfolio: questions and solution Markdown only.
+/*
+!/.gitignore
+!/README.md
+!/[0-9]*_*/
+/[0-9]*_*/*
+!/[0-9]*_*/*.md
