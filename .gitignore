@@ -5,3 +5,12 @@
 !/[0-9]*_*/
 /[0-9]*_*/*
 !/[0-9]*_*/*.md
+
+# Only the three README screenshots are public.
+!/Docs/
+/Docs/*
+!/Docs/Image/
+/Docs/Image/*
+!/Docs/Image/Dashboard.png
+!/Docs/Image/Daily_Learning.png
+!/Docs/Image/Workspace.png
