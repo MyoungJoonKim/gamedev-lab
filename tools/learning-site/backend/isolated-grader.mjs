@@ -1,10 +1,10 @@
 import {readFileSync} from 'node:fs';
-import {testCode} from '../tooling/grader.mjs';
+import {getTestCode} from '../tooling/grader.mjs';
 import {validateReport} from '../site/lib/model.js';
 export const reportMarker='GAMEDEV_REPORT_V1:';
 export function sandboxProgram(id,source){
- if(!Object.hasOwn(testCode,id))throw Error('지원하지 않는 문제입니다.');
- const body=testCode[id].replaceAll('Enumerable.','System.Linq.Enumerable.');
+ if(!getTestCode(id))throw Error('지원하지 않는 문제입니다.');
+ const body=getTestCode(id).replaceAll('Enumerable.','System.Linq.Enumerable.');
  // No provider credentials, application files or session data enter this source.
  const template=readFileSync(new URL('./Judge.cs.template',import.meta.url),'utf8');
  return source+'\n'+template.replace('/*TESTS*/',()=>body).replace('SOURCEBASE64',Buffer.from(source).toString('base64')).replace('PROBLEMID',id);

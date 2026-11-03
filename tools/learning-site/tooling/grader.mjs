@@ -1,3 +1,4 @@
+import {generatedTestCode} from './daily-test-code.mjs';
 import {basicTestCode} from './basic-test-code.mjs';
 import {spawn} from 'node:child_process';
 import {readFile,writeFile,mkdtemp,rm} from 'node:fs/promises';
@@ -28,6 +29,7 @@ export const testCode={
   Check("negative",()=>{var p=new SlotPractice();p.AddWood(2);int n=p.AddWood(-1);return(n==0&&p.GetCount(0)==2&&Enumerable.Range(1,3).All(i=>p.GetCount(i)==0),$"remaining={n}, count={p.GetCount(0)}");});
   Check("independent",()=>{var a=new SlotPractice();var b=new SlotPractice();a.AddWood(7);return(Enumerable.Range(0,4).All(i=>b.GetCount(i)==0),$"new instance first slot={b.GetCount(0)}");});`
 };
+export const getTestCode=id=>Object.hasOwn(testCode,id)?testCode[id]:generatedTestCode(id);
 export function execute(command,args,{cwd,env,timeout=60000,maxOutput=100000}={}){
  return new Promise((resolve,reject)=>{
   const child=spawn(command,args,{cwd,env,detached:process.platform!=='win32',stdio:['ignore','pipe','pipe']});let log='',reason='',stdout='',stderr='';
@@ -41,14 +43,15 @@ export function execute(command,args,{cwd,env,timeout=60000,maxOutput=100000}={}
  });
 }
 export async function grade(id,source){
- if(!Object.hasOwn(testCode,id))throw Error('자동 채점을 지원하지 않는 문제입니다.');
+ const tests=getTestCode(id);
+ if(!tests)throw Error('자동 채점을 지원하지 않는 문제입니다.');
  const sdkDir=process.env.GAMEDEV_DOTNET_DIR||path.resolve(root,'../../../.tools/dotnet');
  const env={...process.env,PATH:sdkDir+path.delimiter+process.env.PATH,DOTNET_CLI_HOME:path.resolve(root,'../../../.tools/dotnet-home'),DOTNET_CLI_TELEMETRY_OPTOUT:'1',DOTNET_NOLOGO:'1',DOTNET_SKIP_FIRST_TIME_EXPERIENCE:'1'};
  let version;try{version=await execute('dotnet',['--version'],{env,timeout:10000});}catch{throw Error('.NET SDK 8 이상이 필요합니다. README의 설치 안내를 확인하세요.');}
  const major=Number(version.log.trim().split('.')[0]);if(version.code!==0||!Number.isInteger(major)||major<8)throw Error('.NET SDK 8 이상을 설치하세요.');
  const dir=await mkdtemp(path.join(os.tmpdir(),'gamedev-lab-'));
  try{
-  const harness=(await readFile(path.join(root,'tooling/Program.cs'),'utf8')).replace('// TESTS',testCode[id]);
+  const harness=(await readFile(path.join(root,'tooling/Program.cs'),'utf8')).replace('// TESTS',()=>tests);
   await writeFile(path.join(dir,'Program.cs'),harness);await writeFile(path.join(dir,'Solution.cs'),source);
   await writeFile(path.join(dir,'Practice.csproj'),`<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net${major}.0</TargetFramework><ImplicitUsings>disable</ImplicitUsings><Nullable>disable</Nullable><EnableDefaultCompileItems>false</EnableDefaultCompileItems></PropertyGroup><ItemGroup><Compile Include="Program.cs"/><Compile Include="Solution.cs"/></ItemGroup></Project>`);
   await writeFile(path.join(dir,'NuGet.Config'),'<configuration><packageSources><clear /></packageSources></configuration>');

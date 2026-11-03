@@ -1,4 +1,5 @@
 import {problems} from './data.js';
+import {dailyId,dailySpec} from './daily-problems.js';
 export const dailyCount=3;
 export const dailyPool=problems.filter(p=>p.runner&&['입문','기초'].includes(p.level));
 export function dayKey(value=new Date()) {
@@ -7,12 +8,20 @@ export function dayKey(value=new Date()) {
 }
 export function validDay(value){if(typeof value!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(value))return false;const date=new Date(value+'T00:00:00Z');return Number.isFinite(date.getTime())&&date.toISOString().slice(0,10)===value;}
 export function ensureDaily(state,day=dayKey()) {
+ if(!validDay(day))throw Error('날짜를 확인하세요.');
  state.daily ||= {};
- if(state.daily[day])return false;
- const last={};
- for(const [date,entry] of Object.entries(state.daily)){if(date>=day)continue;for(const id of Object.keys(entry.completed||{}))if(!last[id]||last[id]<date)last[id]=date;}
- const ordered=dailyPool.map((p,index)=>({id:p.id,index,last:last[p.id]||''})).sort((a,b)=>a.last.localeCompare(b.last)||a.index-b.index);
- state.daily[day]={problemIds:ordered.slice(0,dailyCount).map(p=>p.id),completed:{}};
+ const current=state.daily[day];
+ if(current&&(day!==dayKey()||current.problemIds.some(id=>dailySpec(id))))return false;
+ // Upgrade today's old foundation assignment without destroying its evidence.
+ const legacyAssignment=current?structuredClone(current):null;
+ const previous=Object.keys(state.daily).filter(date=>date<day).sort().at(-1);
+ const prior=previous?state.daily[previous]:null;
+ // Each difficulty has its own slot. Preserve the ID (and draft) until it passes.
+ const ids=[0,1,2].map(tier=>{
+  const id=prior?.problemIds.find(id=>dailySpec(id)?.tier===tier);
+  return id&&!prior.completed?.[id]?id:dailyId(day,tier);
+ });
+ state.daily[day]={problemIds:ids,completed:{},...(legacyAssignment?{legacyAssignment}:{} )};
  return true;
 }
 export function completeDaily(state,id,report,at=new Date().toISOString()) {

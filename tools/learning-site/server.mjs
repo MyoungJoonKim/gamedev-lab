@@ -4,7 +4,7 @@ import {GitPublisher} from './backend/git-publisher.mjs';
 import path from 'node:path';
 import {readFile,realpath} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
-import {grade,testCode} from './tooling/grader.mjs';
+import {grade,getTestCode} from './tooling/grader.mjs';
 import {isolatedGrade} from './backend/isolated-grader.mjs';
 import {createAuth,hostedConfig,equal} from './backend/auth.mjs';
 import {Store} from './backend/store.mjs';
@@ -64,7 +64,7 @@ export function createApp({env=process.env,store:providedStore,authFetch=fetch,r
     if(!hosted&&(!/^(127\.0\.0\.1|localhost)(:\d+)?$/.test(host)||req.headers.origin!==`http://${host}`||req.headers['content-type']!=='application/json')){json(res,403,{error:'로컬 사이트에서 JSON 요청으로 본인 코드만 실행할 수 있습니다.'});return;}
     if(busy){json(res,429,{error:'이미 채점 중입니다. 완료 후 다시 시도하세요.'});return;}
     busy=true;
-    try{const data=await bodyJson(req,100000);if(typeof data.source!=='string'||!data.source.trim()||!Object.hasOwn(testCode,data.problemId)){json(res,400,{error:'문제 ID와 C# 원문을 확인하세요.'});return;}
+    try{const data=await bodyJson(req,100000);if(typeof data.source!=='string'||!data.source.trim()||!getTestCode(data.problemId)){json(res,400,{error:'문제 ID와 C# 원문을 확인하세요.'});return;}
      const result=hosted?await runIsolated(data.problemId,data.source,env):await grade(data.problemId,data.source);json(res,result.error?422:200,result);
     }finally{busy=false;}return;
    }
