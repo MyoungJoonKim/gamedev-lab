@@ -2,6 +2,7 @@ import {getProblem} from './problem-catalog.js';
 import {markdown,status,validateBackup} from './model.js';
 import {dayKey,validDay} from './daily.js';
 const labels={pocket:'집기',slots:'인벤토리',health:'체력',fuel:'연료',cooldown:'쿨타임',nearest:'대상탐색',unique:'아이템종류',materials:'제작재료',queue:'요청대기열',stack:'실행취소',durability:'내구도',score:'점수',breakpoint:'집기디버깅',raycast:'상호작용',events:'체력UI',async:'비동기로딩',trace:'UI디버깅',profiler:'탐색최적화',ngo:'아이템동기화'};
+export const problemFeature=id=>labels[id]||getProblem(id)?.feature||getProblem(id)?.title.replace(/[^\p{L}\p{N}]+/gu,'')||'학습문제';
 export const manifestPath='solutions/.learning-days.json';
 export const emptyManifest=()=>({version:1,days:{}});
 export function validateManifest(value){
@@ -28,12 +29,12 @@ export function dailyPublicationPlans(records,existing=emptyManifest()){
   // Preserve initial problem order; update each problem to its last record of the day.
   for(const r of [...groups[date]].reverse().sort((a,b)=>Date.parse(a.date)-Date.parse(b.date))){if(!first.has(r.problemId))first.set(r.problemId,r.date);latest.set(r.problemId,r);}
   const chosen=[...latest.values()].sort((a,b)=>Date.parse(first.get(a.problemId))-Date.parse(first.get(b.problemId))||a.problemId.localeCompare(b.problemId));
-  const features=chosen.slice(0,3).map(r=>labels[r.problemId]||r.problemId);
+  const features=chosen.slice(0,3).map(r=>problemFeature(r.problemId));
   if(!manifest.days[date])manifest.days[date]={folder:String(++number).padStart(2,'0')+'_'+features.join('_')+(chosen.length>3?'_외':''),files:{}};
   const entry=manifest.days[date];let fileNumber=Math.max(0,...Object.values(entry.files).map(f=>Number(f.name.split('_')[0])));
   const files=chosen.map(record=>{
    const p=getProblem(record.problemId);
-   if(!entry.files[p.id])entry.files[p.id]={name:String(++fileNumber).padStart(2,'0')+'_'+(labels[p.id]||p.id)+'.md',hash:null};
+   if(!entry.files[p.id])entry.files[p.id]={name:String(++fileNumber).padStart(2,'0')+'_'+problemFeature(p.id)+'.md',hash:null};
    return {problemId:p.id,title:p.title,recordId:record.id,relativePath:`solutions/${entry.folder}/${entry.files[p.id].name}`,content:markdown(p,record.draft,{date})};
   });
   const verification=chosen.map(r=>{const d=r.draft,tests=d.report?.tests||[],passed=tests.filter(t=>t.status==='passed').length;return '- '+getProblem(r.problemId).title+': '+status(d)+(tests.length?' · '+passed+'/'+tests.length+' 테스트 통과':' · 실제 테스트 미실행');});
