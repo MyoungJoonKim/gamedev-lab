@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "days": {
+    "2026-11-01": {
+      "folder": "01_집기",
+      "files": {
+        "pocket": {
+          "name": "01_집기.md",
+          "hash": "d7d2c43e03b016c85455f09edc4e3c5c10363e91010ac86be89c7c5b9230d314"
+        }
+      }
+    },
+    "2026-11-03": {
+      "folder": "02_daily-v1-2026-11-03-0_daily-v1-2026-11-03-1_daily-v1-2026-11-03-2",
+      "files": {
+        "daily-v1-2026-11-03-0": {
+          "name": "01_daily-v1-2026-11-03-0.md",
+          "hash": null
+        },
+        "daily-v1-2026-11-03-1": {
+          "name": "02_daily-v1-2026-11-03-1.md",
+          "hash": null
+        },
+        "daily-v1-2026-11-03-2": {
+          "name": "03_daily-v1-2026-11-03-2.md",
+          "hash": null
+        }
+      }
+    }
+  }
+}
